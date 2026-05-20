@@ -13,10 +13,10 @@ The codebase MUST NEVER call `users.messages.send` (or its client equivalents) a
 ## Stack & decisions (locked in 2026-05-20)
 
 - **Runtime**: Python 3.14 (pinned via `.python-version`), managed by `uv`.
-- **Layout**: src layout — `src/mail_assistant/{google_apis,store,analysis,drafts,briefing,web,config}/`. `google_apis/` holds both Gmail and Calendar (they share OAuth). Future Outlook adapter lands as `outlook_apis/`.
+- **Layout**: src layout — `src/mail_assistant/{google_apis,store,sync,analysis,drafts,briefing,web,config}/`. `google_apis/` holds both Gmail and Calendar (they share OAuth). `sync/` orchestrates between providers and `store/`. Future Outlook adapter lands as `outlook_apis/`.
 - **Config**: `pydantic-settings`, prefix `MAIL_ASSISTANT_`, reads `.env` (see `.env.example`).
 - **Providers**: Gmail-first via Google OAuth **desktop-app** client (loopback redirect — no public domain). Outlook later via a sibling `outlook_apis/` adapter.
-- **Storage**: SQLite + FTS5 (not yet scaffolded).
+- **Storage**: SQLite at `%USERPROFILE%\.mail_assistant\mail.db` (WAL mode). Schema in `store/migrations/*.sql`, applied via `apply_migrations()` on every CLI invocation. Raw `sqlite3` (no ORM). FTS5 contentless virtual table `messages_fts` kept in sync via triggers on `messages`. Body text is fetched lazily and `COALESCE`d on upsert so metadata-only refreshes don't wipe cached bodies.
 - **Web UI**: FastAPI on `127.0.0.1` (not yet scaffolded).
 - **LLM**: Claude API. Use prompt caching for long threads + sent-style profile.
 - **Secrets**: `keyring` → Windows Credential Manager for OAuth refresh tokens. Single keyring entry: service `mail_assistant`, username `google-primary` (no multi-account yet).
@@ -41,8 +41,11 @@ CLI surface (`uv run mail-assistant ...`):
 mail-assistant auth              # run OAuth flow, store creds in Credential Manager
 mail-assistant auth status       # which account, token age, days until refresh expiry
 mail-assistant auth revoke       # delete local creds (server-side revoke via myaccount.google.com)
-mail-assistant inbox unread [-n] # print N most recent unread messages
+mail-assistant inbox unread [-n] # print N most recent unread (hits Gmail directly)
 mail-assistant calendar today    # print today's events
+mail-assistant sync init [-d 30] # full sync of last N days into local SQLite
+mail-assistant sync update       # incremental sync via Gmail History API
+mail-assistant search <query>    # FTS5 search over cached messages
 ```
 
 If `uv` is not on PATH (winget install may not refresh the current shell), it lives at:
@@ -57,3 +60,6 @@ If `uv` is not on PATH (winget install may not refresh the current shell), it li
 - `goal.txt` is the product spec. Treat it as authoritative when scoping new features.
 - `PHASE0.md` is a user-side checklist (looks hook-generated). Don't write to it unless asked.
 - Adding a new Gmail API call? Double-check it isn't on the "send" path before importing it.
+- The local SQLite DB lives in `%USERPROFILE%\.mail_assistant\mail.db` and contains the user's email content. It's their machine, but treat the file as sensitive (no logging dumps, no analytics).
+- Gmail's `users.history.list` returns history only for ~7 days. If a user's `sync update` fails because the checkpoint is too old, `sync/syncer.py` raises `SyncError` with guidance to re-run `sync init`. Don't silently re-baseline — let the user see it.
+- When extending the store schema, add a new `store/migrations/000N_*.sql` file. Migrations are forward-only and tracked in the `_migrations` table.

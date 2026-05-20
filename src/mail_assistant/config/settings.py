@@ -32,8 +32,17 @@ class Settings(BaseSettings):
         description="Flag outbound emails awaiting a reply after this many days.",
     )
 
+    sync_window_days: int = Field(
+        default=30,
+        description="Default lookback window for `mail-assistant sync init`.",
+    )
+
     web_host: str = "127.0.0.1"
     web_port: int = 8765
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "mail.db"
 
 
 def load_settings() -> Settings:
