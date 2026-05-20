@@ -1,0 +1,43 @@
+[project]
+name = "mail-assistant"
+version = "0.1.0"
+description = "Local Gmail secretary that drafts, classifies, and briefs without sending or deleting."
+authors = [
+    { name = "mila-voloshenko", email = "volosh2026@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic-settings>=2.14.1",
+]
+
+[project.scripts]
+mail-assistant = "mail_assistant:main"
+
+[build-system]
+requires = ["uv_build>=0.11.15,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["src"]
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+python_version = "3.14"

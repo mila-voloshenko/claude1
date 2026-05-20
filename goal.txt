@@ -1,0 +1,10 @@
+goal make servise described next:
+Each participant sends a request through their own Gmail (or Outlook via Microsoft Graph) and receives a response from the assistant,
+which processes the mailbox without independently sending or deleting anything.
+It works like a secretary: sorting, summarizing, drafting, scheduling, and reviewing — but only the user signs and sends the messages.
+1.A one-page briefing at the start of each day: who needs you today, what you owe, what you’re waiting for, and “phantom meetings” — suggested meetings hidden inside email threads that don’t yet exist as calendar events.
+2.It analyzes unread messages and creates a structured action plan: classification (urgent / action required / FYI / newsletter / social), extraction of action items, suggestions to archive / label / snooze, and a “must reply today” view. Nothing is applied until the user confirms.
+3.It generates replies based on the full email thread, the user’s sent-email writing style profile, personal knowledge (notes, calendar, previous conversations with the contact). The draft is saved to Gmail Drafts; it is never sent automatically.
+4.It flags emails you sent that nobody has replied to for N days.
+5.Newsletter management for subscriptions you never open — generates a review checklist, never acts automatically.
+6.Calendar control — compares proposed times inside email threads against your actual calendar availability.
