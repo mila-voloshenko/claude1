@@ -1,2 +1,5 @@
+from mail_assistant.cli import app
+
+
 def main() -> None:
-    print("Hello from mail-assistant!")
+    app()
