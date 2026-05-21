@@ -9,7 +9,7 @@ from mail_assistant.store.db import Database
 from mail_assistant.store.models import StoredMessage
 
 
-def _row_to_message(row: Any) -> StoredMessage:
+def row_to_message(row: Any) -> StoredMessage:
     return StoredMessage(
         id=row["id"],
         thread_id=row["thread_id"],
@@ -118,19 +118,19 @@ def delete_messages(db: Database, message_ids: Iterable[str]) -> int:
 
 def get_message(db: Database, message_id: str) -> StoredMessage | None:
     row = db.conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
-    return _row_to_message(row) if row else None
+    return row_to_message(row) if row else None
 
 
 def list_unread(db: Database, limit: int = 100) -> list[StoredMessage]:
     rows = db.conn.execute(
         "SELECT * FROM messages WHERE is_unread = 1 ORDER BY date DESC LIMIT ?", (limit,)
     ).fetchall()
-    return [_row_to_message(r) for r in rows]
+    return [row_to_message(r) for r in rows]
 
 
 def list_recent(db: Database, limit: int = 50) -> list[StoredMessage]:
     rows = db.conn.execute("SELECT * FROM messages ORDER BY date DESC LIMIT ?", (limit,)).fetchall()
-    return [_row_to_message(r) for r in rows]
+    return [row_to_message(r) for r in rows]
 
 
 def count_messages(db: Database) -> int:

@@ -7,10 +7,14 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from mail_assistant.analysis.categories import Category
+from mail_assistant.analysis.classifier import classify_pending
+from mail_assistant.analysis.llm import LLMClient, LLMConfigError
 from mail_assistant.config.settings import Settings, load_settings
 from mail_assistant.google_apis import auth as auth_mod
 from mail_assistant.google_apis.calendar_client import CalendarClient
 from mail_assistant.google_apis.gmail_client import GmailClient
+from mail_assistant.store import classifications as classifications_repo
 from mail_assistant.store import search as search_repo
 from mail_assistant.store.db import Database
 from mail_assistant.store.migrations import apply_migrations
@@ -25,10 +29,12 @@ auth_app = typer.Typer(help="Manage Google OAuth credentials.")
 inbox_app = typer.Typer(help="Inspect your Gmail inbox (read-only).")
 calendar_app = typer.Typer(help="Inspect your Google Calendar (read-only).")
 sync_app = typer.Typer(help="Sync your mailbox into the local SQLite cache.")
+classify_app = typer.Typer(help="Classify cached messages via Claude.")
 app.add_typer(auth_app, name="auth")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(calendar_app, name="calendar")
 app.add_typer(sync_app, name="sync")
+app.add_typer(classify_app, name="classify")
 
 console = Console()
 
@@ -42,6 +48,14 @@ def _open_db(settings: Settings) -> Database:
 def _gmail_from_settings(settings: Settings) -> GmailClient:
     creds = auth_mod.get_credentials(settings.google_client_secret_file, interactive=False)
     return GmailClient(creds)
+
+
+def _llm_from_settings(settings: Settings) -> LLMClient:
+    try:
+        return LLMClient(settings.anthropic_api_key, settings.anthropic_model)
+    except LLMConfigError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
 
 
 @auth_app.callback(invoke_without_command=True)
@@ -200,6 +214,78 @@ def cli_search(
     table.add_column("Subject")
     for h in hits:
         table.add_row(h.date.strftime("%Y-%m-%d"), h.from_addr or h.from_name, h.subject)
+    console.print(table)
+
+
+@classify_app.command("run")
+def classify_run(
+    n: Annotated[
+        int | None,
+        typer.Option("-n", "--limit", help="How many unclassified messages to process."),
+    ] = None,
+) -> None:
+    """Classify up to N unclassified messages and store results locally."""
+    settings = load_settings()
+    db = _open_db(settings)
+    llm = _llm_from_settings(settings)
+    limit = n if n is not None else settings.classify_batch_size
+    console.print(
+        f"Classifying up to [bold]{limit}[/bold] messages with [bold]{llm.model}[/bold]..."
+    )
+    report = classify_pending(db, llm, limit=limit)
+    console.print(f"[green]Classified {report.classified} messages.[/green]")
+    if report.errors:
+        console.print(f"[yellow]{len(report.errors)} errors:[/yellow]")
+        for err in report.errors[:5]:
+            console.print(f"  {err}")
+
+
+@classify_app.command("counts")
+def classify_counts() -> None:
+    """Print counts of cached messages per category."""
+    settings = load_settings()
+    db = _open_db(settings)
+    counts = classifications_repo.count_by_category(db)
+    if not counts:
+        console.print("No classifications yet. Run `mail-assistant classify run` first.")
+        return
+    table = Table(title="Classifications")
+    table.add_column("Category")
+    table.add_column("Count", justify="right")
+    for cat in Category:
+        table.add_row(cat.value, str(counts.get(cat, 0)))
+    console.print(table)
+
+
+@classify_app.command("show")
+def classify_show(
+    category: Annotated[
+        Category,
+        typer.Argument(help="One of: urgent, action_required, fyi, newsletter, social"),
+    ],
+    n: Annotated[int, typer.Option("-n", "--limit")] = 20,
+) -> None:
+    """List classified messages in a given category, newest first."""
+    settings = load_settings()
+    db = _open_db(settings)
+    rows = classifications_repo.list_by_category(db, category, limit=n)
+    if not rows:
+        console.print(f"No messages classified as [bold]{category.value}[/bold] yet.")
+        return
+    table = Table(title=f"{category.value} ({len(rows)})")
+    table.add_column("Date")
+    table.add_column("From")
+    table.add_column("Subject")
+    table.add_column("Conf", justify="right")
+    table.add_column("Reason")
+    for msg, clf in rows:
+        table.add_row(
+            msg.date.strftime("%Y-%m-%d"),
+            msg.from_addr or msg.from_name,
+            msg.subject,
+            f"{clf.confidence:.2f}",
+            clf.reason,
+        )
     console.print(table)
 
 

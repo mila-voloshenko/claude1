@@ -18,7 +18,7 @@ The codebase MUST NEVER call `users.messages.send` (or its client equivalents) a
 - **Providers**: Gmail-first via Google OAuth **desktop-app** client (loopback redirect — no public domain). Outlook later via a sibling `outlook_apis/` adapter.
 - **Storage**: SQLite at `%USERPROFILE%\.mail_assistant\mail.db` (WAL mode). Schema in `store/migrations/*.sql`, applied via `apply_migrations()` on every CLI invocation. Raw `sqlite3` (no ORM). FTS5 contentless virtual table `messages_fts` kept in sync via triggers on `messages`. Body text is fetched lazily and `COALESCE`d on upsert so metadata-only refreshes don't wipe cached bodies.
 - **Web UI**: FastAPI on `127.0.0.1` (not yet scaffolded).
-- **LLM**: Claude API. Use prompt caching for long threads + sent-style profile.
+- **LLM**: Claude API. Default model `claude-opus-4-7` (override via `MAIL_ASSISTANT_ANTHROPIC_MODEL`). Use `client.messages.parse()` with Pydantic schemas for structured outputs. Cache long system prompts with `cache_control: ephemeral`. Classifier uses `thinking: {type: "disabled"}` + `effort: "low"` (high volume, low per-call stakes); switch to adaptive thinking for harder per-thread tasks in later phases.
 - **Secrets**: `keyring` → Windows Credential Manager for OAuth refresh tokens. Single keyring entry: service `mail_assistant`, username `google-primary` (no multi-account yet).
 - **Scheduler**: Windows Task Scheduler for the daily briefing.
 
@@ -46,6 +46,9 @@ mail-assistant calendar today    # print today's events
 mail-assistant sync init [-d 30] # full sync of last N days into local SQLite
 mail-assistant sync update       # incremental sync via Gmail History API
 mail-assistant search <query>    # FTS5 search over cached messages
+mail-assistant classify run [-n] # classify up to N unclassified messages via Claude
+mail-assistant classify counts   # count per category
+mail-assistant classify show <category>  # list messages in a category
 ```
 
 If `uv` is not on PATH (winget install may not refresh the current shell), it lives at:
@@ -63,3 +66,5 @@ If `uv` is not on PATH (winget install may not refresh the current shell), it li
 - The local SQLite DB lives in `%USERPROFILE%\.mail_assistant\mail.db` and contains the user's email content. It's their machine, but treat the file as sensitive (no logging dumps, no analytics).
 - Gmail's `users.history.list` returns history only for ~7 days. If a user's `sync update` fails because the checkpoint is too old, `sync/syncer.py` raises `SyncError` with guidance to re-run `sync init`. Don't silently re-baseline — let the user see it.
 - When extending the store schema, add a new `store/migrations/000N_*.sql` file. Migrations are forward-only and tracked in the `_migrations` table.
+- LLM prompts live in `src/mail_assistant/analysis/prompts/*.md` and are loaded via `importlib.resources`. Keeping them in `.md` files (not Python literals) avoids line-length wars and makes the prompt easy to edit without touching code. The `prompts/` directory has an `__init__.py` so the build backend ships the files.
+- Adding a new analysis feature that calls Claude? Always: (1) `cache_control: ephemeral` on the system prompt, (2) `output_format=PydanticModel` via `messages.parse()`, (3) handle `response.parsed_output is None` explicitly (the model can refuse). See `analysis/classifier.py` for the pattern.

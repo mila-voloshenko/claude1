@@ -27,6 +27,16 @@ class Settings(BaseSettings):
         description="Claude API key. Loaded from MAIL_ASSISTANT_ANTHROPIC_API_KEY or .env.",
     )
 
+    anthropic_model: str = Field(
+        default="claude-opus-4-7",
+        description="Claude model ID. Override to claude-sonnet-4-6 or claude-haiku-4-5.",
+    )
+
+    classify_batch_size: int = Field(
+        default=50,
+        description="How many unclassified messages to process per `classify run` invocation.",
+    )
+
     no_reply_threshold_days: int = Field(
         default=4,
         description="Flag outbound emails awaiting a reply after this many days.",
